@@ -374,7 +374,9 @@ do
             end
         end
         self.HighlightTexture:SetShown(true);
-        TaskPOI_OnEnter(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self.Text:GetText() or "")
+        GameTooltip:Show()
     end
 
     local function QuestButton_OnLeave(self)
@@ -400,7 +402,10 @@ do
         end
 
         self.HighlightTexture:SetShown(false);
-        TaskPOI_OnLeave(self)
+
+        if GameTooltip:GetOwner() == self then
+            GameTooltip:Hide()
+        end
     end
 
     local function QuestButton_OnClick(self, button)
