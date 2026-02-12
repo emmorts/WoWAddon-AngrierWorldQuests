@@ -747,6 +747,11 @@ do
 
         local totalHeight = 8
         button.worldQuest = true
+        button.questLogIndex = nil
+        button.info = nil
+        button.isHeader = nil
+        button.isCollapsed = nil
+        button.isInternalOnly = nil
         button.questID = questID
         button.mapID = questInfo.mapID
         button.factionID = factionID
