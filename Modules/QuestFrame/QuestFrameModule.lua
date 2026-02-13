@@ -39,6 +39,7 @@ local L = LibStub("AceLocale-3.0"):GetLocale(addonName)
 --region Variables
 
 local dataProvider
+local suppressorPin
 local hoveredQuestID
 local titleFramePool
 
@@ -352,6 +353,110 @@ do
         return questTagInfoCache[questID]
     end
 
+    local function QuestButton_AddTooltipRewards(tooltip, questID)
+        local addedLine = false
+
+        local baseXp = GetQuestLogRewardXP(questID)
+        if baseXp and baseXp > 0 then
+            GameTooltip_AddColoredLine(tooltip, BONUS_OBJECTIVE_EXPERIENCE_FORMAT:format(baseXp), HIGHLIGHT_FONT_COLOR)
+            addedLine = true
+        end
+
+        local artifactXP = GetQuestLogRewardArtifactXP(questID)
+        if artifactXP and artifactXP > 0 then
+            GameTooltip_AddColoredLine(tooltip, BONUS_OBJECTIVE_ARTIFACT_XP_FORMAT:format(artifactXP), HIGHLIGHT_FONT_COLOR)
+            addedLine = true
+        end
+
+        local money = GetQuestLogRewardMoney(questID)
+        if money and money > 0 then
+            local gold = floor(money / COPPER_PER_GOLD)
+            if gold > 0 then
+                GameTooltip_AddColoredLine(tooltip, BONUS_OBJECTIVE_REWARD_WITH_COUNT_FORMAT:format("Interface\\MoneyFrame\\UI-GoldIcon", BreakUpLargeNumbers(gold), GOLD_AMOUNT_SYMBOL), HIGHLIGHT_FONT_COLOR)
+                addedLine = true
+            end
+        end
+
+        local currencies = C_QuestLog.GetQuestRewardCurrencies(questID)
+        if currencies then
+            for _, currencyInfo in ipairs(currencies) do
+                if currencyInfo and currencyInfo.texture and currencyInfo.totalRewardAmount and currencyInfo.name then
+                    local text = BONUS_OBJECTIVE_REWARD_WITH_COUNT_FORMAT:format(currencyInfo.texture, currencyInfo.totalRewardAmount, currencyInfo.name)
+                    GameTooltip_AddColoredLine(tooltip, text, HIGHLIGHT_FONT_COLOR)
+                    addedLine = true
+                end
+            end
+        end
+
+        local numQuestRewards = GetNumQuestLogRewards(questID)
+        if numQuestRewards and numQuestRewards > 0 then
+            local itemName, itemTexture, quantity, quality = GetQuestLogRewardInfo(1, questID)
+            if itemName and itemTexture then
+                local text
+                if quantity and quantity > 1 then
+                    text = BONUS_OBJECTIVE_REWARD_WITH_COUNT_FORMAT:format(itemTexture, quantity, itemName)
+                else
+                    text = BONUS_OBJECTIVE_REWARD_FORMAT:format(itemTexture, itemName)
+                end
+
+                local colorData = quality and ColorManager.GetColorDataForItemQuality(quality) or nil
+                local color = (colorData and colorData.color) or HIGHLIGHT_FONT_COLOR
+                GameTooltip_AddColoredLine(tooltip, text, color)
+                addedLine = true
+            end
+        end
+
+        return addedLine
+    end
+
+    local function QuestButton_BuildSafeTooltip(self)
+        local questID = self.questID
+        if not questID then
+            return
+        end
+
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        local title = self.Text and self.Text:GetText() or C_TaskQuest.GetQuestInfoByQuestID(questID) or ""
+
+        local tagInfo = GetCachedQuestTagInfo(questID)
+        if tagInfo and tagInfo.quality then
+            local colorData = ColorManager.GetColorDataForWorldQuestQuality(tagInfo.quality)
+            if colorData then
+                GameTooltip_SetTitle(GameTooltip, title, colorData.color)
+            else
+                GameTooltip_SetTitle(GameTooltip, title)
+            end
+        else
+            GameTooltip_SetTitle(GameTooltip, title)
+        end
+
+        if C_QuestLog.IsAccountQuest(questID) then
+            GameTooltip_AddColoredLine(GameTooltip, ACCOUNT_QUEST_LABEL, ACCOUNT_WIDE_FONT_COLOR)
+        end
+
+        QuestUtils_AddQuestTypeToTooltip(GameTooltip, questID, NORMAL_FONT_COLOR)
+
+        local factionID = self.factionID or select(2, C_TaskQuest.GetQuestInfoByQuestID(questID))
+        if factionID then
+            local factionData = C_Reputation.GetFactionDataByID(factionID)
+            if factionData and factionData.name then
+                GameTooltip_AddNormalLine(GameTooltip, factionData.name)
+            end
+        end
+
+        GameTooltip_AddQuestTimeToTooltip(GameTooltip, questID)
+
+        GameTooltip_AddBlankLineToTooltip(GameTooltip)
+        QuestButton_AddTooltipRewards(GameTooltip, questID)
+
+        local widgetSetID = C_TaskQuest.GetQuestUIWidgetSetByType(questID, Enum.MapIconUIWidgetSetType.Tooltip)
+        if widgetSetID then
+            GameTooltip_AddWidgetSet(GameTooltip, widgetSetID)
+        end
+
+        GameTooltip:Show()
+    end
+
     local function QuestButton_OnEnter(self)
         local questTagInfo = GetCachedQuestTagInfo(self.questID)
 
@@ -367,16 +472,10 @@ do
 
         hoveredQuestID = self.questID
 
-        if dataProvider then
-            local pin = dataProvider.activePins[self.questID]
-            if pin then
-                POIButtonMixin.OnEnter(pin)
-            end
-        end
         self.HighlightTexture:SetShown(true);
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(self.Text:GetText() or "")
-        GameTooltip:Show()
+        QuestButton_BuildSafeTooltip(self)
+
+        QuestFrameModule:MarkPinSuppressionDirty()
     end
 
     local function QuestButton_OnLeave(self)
@@ -394,18 +493,13 @@ do
 
         hoveredQuestID = nil
 
-        if dataProvider then
-            local pin = dataProvider.activePins[self.questID]
-            if pin then
-                POIButtonMixin.OnLeave(pin)
-            end
-        end
-
         self.HighlightTexture:SetShown(false);
 
         if GameTooltip:GetOwner() == self then
             GameTooltip:Hide()
         end
+
+        QuestFrameModule:MarkPinSuppressionDirty()
     end
 
     local function QuestButton_OnClick(self, button)
@@ -491,6 +585,78 @@ do
         button.ToggleTracking = QuestButton_ToggleTracking
 
         button.awq = true
+    end
+
+    AWQ_WorldQuestSuppressorPinMixin = {}
+
+    function AWQ_WorldQuestSuppressorPinMixin:OnAcquired()
+        self:Hide()
+    end
+
+    function AWQ_WorldQuestSuppressorPinMixin:IsPinSuppressor()
+        return true
+    end
+
+    function AWQ_WorldQuestSuppressorPinMixin:ResetSuppression()
+        if self.suppressedPins then
+            for pin in pairs(self.suppressedPins) do
+                pin:ClearSuppression()
+            end
+        end
+        self.suppressedPins = nil
+    end
+
+    function AWQ_WorldQuestSuppressorPinMixin:TrackSuppressedPin(pin)
+        if not self.suppressedPins then
+            self.suppressedPins = {}
+        end
+        self.suppressedPins[pin] = true
+    end
+
+    function AWQ_WorldQuestSuppressorPinMixin:FinalizeSuppression()
+    end
+
+    function AWQ_WorldQuestSuppressorPinMixin:ShouldSuppressPin(pin)
+        if not pin or not pin.questID or (not pin.worldQuest and not (pin.MatchesTag and pin:MatchesTag(MapPinTags.WorldQuest))) then
+            return false
+        end
+
+        if ConfigModule:Get("showHoveredPOI") and hoveredQuestID == pin.questID then
+            return false
+        end
+
+        local map = self:GetMap()
+        if not map then
+            return false
+        end
+
+        local mapID = map:GetMapID()
+        if not mapID then
+            return false
+        end
+
+        local mapInfo = C_Map.GetMapInfo(mapID)
+        if mapInfo and mapInfo.mapType == Enum.UIMapType.Continent and not ConfigModule:Get("showContinentPOI") then
+            local pinMapID = (pin.info and pin.info.mapID) or pin.mapID
+            if pinMapID and pinMapID ~= mapID and DataModule:GetContentMapIDFromMapID(pinMapID) ~= mapID then
+                return true
+            end
+        end
+
+        if ConfigModule:Get("hideUntrackedPOI") and not WorldMap_IsWorldQuestEffectivelyTracked(pin.questID) then
+            return true
+        end
+
+        if ConfigModule:Get("hideFilteredPOI") then
+            local info = pin.info
+            if info then
+                if DataModule:IsQuestFiltered(info, mapID) then
+                    return true
+                end
+            end
+        end
+
+        return false
     end
 
     local function GetAnimaValue(itemID)
@@ -984,57 +1150,11 @@ do
         return nil
     end
 
-    local function ShouldShowQuest(self, info)
-        if self:IsQuestSuppressed(info.questID) then
-            return false;
-        end
-
-        if self.focusedQuestID then
-            return C_QuestLog.IsQuestCalling(self.focusedQuestID) and self:ShouldSupertrackHighlightInfo(info.questID);
-        end
-
-        local mapID = self:GetMap():GetMapID()
-
-        if ConfigModule:Get("showHoveredPOI") and hoveredQuestID == info.questID then
-            return true
-        end
-
-        if ConfigModule:Get("hideFilteredPOI") then
-            if DataModule:IsQuestFiltered(info, mapID) then
-                return false
-            end
-        end
-
-        if ConfigModule:Get("hideUntrackedPOI") then
-            if not (WorldMap_IsWorldQuestEffectivelyTracked(info.questID)) then
-                return false
-            end
-        end
-
-        local mapInfo = C_Map.GetMapInfo(mapID)
-
-        if ConfigModule:Get("showContinentPOI") and mapInfo.mapType == Enum.UIMapType.Continent then
-            return mapID == info.mapID or (DataModule:GetContentMapIDFromMapID(info.mapID) == mapID)
-        else
-            return mapID == info.mapID
-        end
-    end
-
-    local function ShouldMapShowQuest(self, mapID, questInfo)
-        local mapInfo = C_Map.GetMapInfo(mapID);
-        if questInfo.questID == C_SuperTrack.GetSuperTrackedQuestID() and mapInfo.mapType == Enum.UIMapType.Continent then
-            return true;
-        end
-        return false;
-    end
-
     function QuestFrameModule:OverrideShouldShowQuest()
         local dp = GetDataProvider()
 
         if dp ~= nil then
             dataProvider = dp
-            dataProvider.ShouldShowQuest = ShouldShowQuest
-            dataProvider.ShouldMapShowQuest = ShouldMapShowQuest
         end
 
         Menu.ModifyMenu("MENU_WORLD_MAP_TRACKING", function(_, rootDescription, _)
@@ -1051,6 +1171,7 @@ do
             QuestMapFrame_UpdateAll()
 
             dataProvider:RefreshAllData()
+            self:MarkPinSuppressionDirty()
         end)
     end
 
@@ -1061,6 +1182,8 @@ do
     function QuestFrameModule:OnEnable()
         self:OverrideShouldShowQuest()
 
+        self:EnsureSuppressorPin()
+
         titleFramePool = CreateFramePool("BUTTON", QuestScrollFrame.Contents, "QuestLogTitleTemplate")
         hooksecurefunc("QuestLogQuests_Update", self.QuestLog_Update)
         AceHook:HookScript(QuestMapFrame, "OnHide", self.QuestLogClosed)
@@ -1069,3 +1192,27 @@ do
     end
 end
 --endregion
+
+function QuestFrameModule:GetWorldMap()
+    return WorldMapFrame
+end
+
+function QuestFrameModule:EnsureSuppressorPin()
+    if suppressorPin then
+        return
+    end
+
+    local map = self:GetWorldMap()
+    if not map or not map.AcquirePin then
+        return
+    end
+
+    suppressorPin = map:AcquirePin("AWQ_WorldQuestSuppressorPinTemplate")
+end
+
+function QuestFrameModule:MarkPinSuppressionDirty()
+    local map = self:GetWorldMap()
+    if map and map.SetPinSuppressionDirty then
+        map:SetPinSuppressionDirty()
+    end
+end

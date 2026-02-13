@@ -33,6 +33,10 @@ local WorkaroundsModule = AngrierWorldQuests:NewModule("WorkaroundsModule")
 local ConfigModule = AngrierWorldQuests:GetModule("ConfigModule")
 
 local function WorkaroundMapTaints()
+    if WorldMapFrame and MapCanvasMixin and WorldMapFrame.AcquirePin == MapCanvasMixin.AcquirePin then
+        return
+    end
+
     -- Code copied from hack from Kalies Tracker, which is based on the original Blizzard_MapCanvas.lua code.
     local function OnPinReleased(pinPool, pin)
 		local map = pin:GetMap();
