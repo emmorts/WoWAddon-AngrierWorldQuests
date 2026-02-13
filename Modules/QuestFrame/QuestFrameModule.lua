@@ -44,6 +44,9 @@ local rewardPreloadRequested = {}
 local listRefreshPending = false
 local fullRefreshPending = false
 local awqTooltip
+local awqHeaderFontFile
+local awqHeaderFontSize
+local awqHeaderFontFlags
 
 local function WrapTextWithColor(color, text)
     if not color or text == nil then
@@ -58,6 +61,10 @@ local function WrapTextWithColor(color, text)
 end
 
 local function ShowAWQTooltip(anchor, lines)
+    if not awqHeaderFontFile then
+        awqHeaderFontFile, awqHeaderFontSize, awqHeaderFontFlags = GameFontNormal:GetFont()
+    end
+
     if not awqTooltip then
         awqTooltip = CreateFrame("Frame", "AWQTooltip", UIParent, "BackdropTemplate")
         awqTooltip:SetBackdrop({
@@ -77,7 +84,13 @@ local function ShowAWQTooltip(anchor, lines)
             fs = awqTooltip:CreateFontString(nil, "ARTWORK", "GameFontNormal")
             awqTooltip.lines[i] = fs
         end
-        fs:SetFontObject(line.fontObject or (i == 1 and GameTooltipHeaderText or GameFontNormal))
+        if line.fontObject then
+            fs:SetFontObject(line.fontObject)
+        elseif i == 1 and awqHeaderFontFile and awqHeaderFontSize then
+            fs:SetFont(awqHeaderFontFile, awqHeaderFontSize + 2, awqHeaderFontFlags)
+        else
+            fs:SetFontObject(GameFontNormal)
+        end
         fs:SetText(line.text or "")
         local color = line.color or NORMAL_FONT_COLOR
         fs:SetTextColor(color.r, color.g, color.b)
