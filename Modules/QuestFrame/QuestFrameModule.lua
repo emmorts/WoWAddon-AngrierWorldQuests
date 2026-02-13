@@ -42,6 +42,9 @@ local dataProvider
 local suppressorPin
 local hoveredQuestID
 local titleFramePool
+local rewardPreloadRequested = {}
+local listRefreshPending = false
+local fullRefreshPending = false
 
 --endregion
 
@@ -332,7 +335,7 @@ do
         if ( button == "LeftButton" ) then
             questsCollapsed = not questsCollapsed
             ConfigModule:Set("collapsed", questsCollapsed)
-            QuestMapFrame_UpdateAll()
+            QuestFrameModule:RequestQuestLogUpdate()
         end
     end
 
@@ -715,6 +718,10 @@ do
     end
 
     function QuestFrameModule:QuestLog_Update()
+        if not QuestMapFrame or not QuestMapFrame:IsShown() then
+            return
+        end
+
         titleFramePool:ReleaseAll()
 
         local mapID = QuestMapFrame:GetParent():GetMapID()
@@ -832,7 +839,7 @@ do
             local addedQuests = {}
             local displayMapIDs = DataModule:GetMapIDsToGetQuestsFrom(mapID)
 
-            local searchBoxText = QuestScrollFrame.SearchBox:GetText():lower()
+        local searchBoxText = QuestScrollFrame.SearchBox:GetText():lower()
 
             for mID in pairs(displayMapIDs) do
                 local taskInfo = C_TaskQuest.GetQuestsOnMap(mID)
@@ -898,7 +905,7 @@ do
         local title, factionID, _ = C_TaskQuest.GetQuestInfoByQuestID(questID)
         local questTagInfo = GetCachedQuestTagInfo(questID)
         local timeLeftMinutes = C_TaskQuest.GetQuestTimeLeftMinutes(questID)
-        C_TaskQuest.RequestPreloadRewardData(questID)
+        QuestFrameModule:RequestRewardPreload(questID)
 
         if (questTagInfo == nil) then
             return nil
@@ -1158,20 +1165,19 @@ do
         end
 
         Menu.ModifyMenu("MENU_WORLD_MAP_TRACKING", function(_, rootDescription, _)
-            rootDescription:AddMenuResponseCallback(QuestMapFrame_UpdateAll)
+            rootDescription:AddMenuResponseCallback(function()
+                QuestFrameModule:RequestFullRefresh()
+            end)
         end)
     end
 
     function QuestFrameModule:RegisterCallbacks()
         ConfigModule:RegisterCallback("showAtTop", function()
-            QuestMapFrame_UpdateAll()
+            QuestFrameModule:RequestQuestLogUpdate()
         end)
 
         ConfigModule:RegisterCallback({ "hideUntrackedPOI", "hideFilteredPOI", "showContinentPOI", "onlyCurrentZone", "sortMethod", "selectedFilters","disabledFilters", "filterEmissary", "filterLoot", "filterFaction", "filterZone", "filterTime", "lootFilterUpgrades", "lootUpgradesLevel", "timeFilterDuration" }, function()
-            QuestMapFrame_UpdateAll()
-
-            dataProvider:RefreshAllData()
-            self:MarkPinSuppressionDirty()
+            self:RequestFullRefresh()
         end)
     end
 
@@ -1185,7 +1191,9 @@ do
         self:EnsureSuppressorPin()
 
         titleFramePool = CreateFramePool("BUTTON", QuestScrollFrame.Contents, "QuestLogTitleTemplate")
-        hooksecurefunc("QuestLogQuests_Update", self.QuestLog_Update)
+        hooksecurefunc("QuestLogQuests_Update", function()
+            self:RequestQuestLogUpdate()
+        end)
         AceHook:HookScript(QuestMapFrame, "OnHide", self.QuestLogClosed)
 
         self:RegisterCallbacks()
@@ -1195,6 +1203,53 @@ end
 
 function QuestFrameModule:GetWorldMap()
     return WorldMapFrame
+end
+
+function QuestFrameModule:RequestRewardPreload(questID)
+    if not questID then
+        return
+    end
+
+    if rewardPreloadRequested[questID] then
+        return
+    end
+
+    rewardPreloadRequested[questID] = true
+    C_TaskQuest.RequestPreloadRewardData(questID)
+end
+
+function QuestFrameModule:RequestQuestLogUpdate()
+    if listRefreshPending then
+        return
+    end
+
+    listRefreshPending = true
+    C_Timer.After(0.05, function()
+        listRefreshPending = false
+        if QuestMapFrame and QuestMapFrame:IsShown() then
+            QuestFrameModule:QuestLog_Update()
+        end
+    end)
+end
+
+function QuestFrameModule:RequestFullRefresh()
+    if fullRefreshPending then
+        return
+    end
+
+    fullRefreshPending = true
+    C_Timer.After(0.1, function()
+        fullRefreshPending = false
+        if QuestMapFrame and QuestMapFrame:IsShown() then
+            QuestMapFrame_UpdateAll()
+        end
+
+        if dataProvider then
+            dataProvider:RefreshAllData()
+        end
+
+        QuestFrameModule:MarkPinSuppressionDirty()
+    end)
 end
 
 function QuestFrameModule:EnsureSuppressorPin()
