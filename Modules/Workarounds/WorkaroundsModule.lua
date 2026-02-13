@@ -33,7 +33,10 @@ local WorkaroundsModule = AngrierWorldQuests:NewModule("WorkaroundsModule")
 local ConfigModule = AngrierWorldQuests:GetModule("ConfigModule")
 
 local function WorkaroundMapTaints()
-    if WorldMapFrame and MapCanvasMixin and WorldMapFrame.AcquirePin == MapCanvasMixin.AcquirePin then
+    if MapCanvasMixin and MapCanvasMixin.AcquirePin then
+        if WorldMapFrame and WorldMapFrame.AcquirePin ~= MapCanvasMixin.AcquirePin then
+            WorldMapFrame.AcquirePin = MapCanvasMixin.AcquirePin
+        end
         return
     end
 
