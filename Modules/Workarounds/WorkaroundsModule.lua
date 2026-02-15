@@ -32,11 +32,12 @@ local AngrierWorldQuests = LibStub("AceAddon-3.0"):GetAddon(addonName)
 local WorkaroundsModule = AngrierWorldQuests:NewModule("WorkaroundsModule")
 local ConfigModule = AngrierWorldQuests:GetModule("ConfigModule")
 
+local function IsMainlineClient()
+    return WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+end
+
 local function WorkaroundMapTaints()
     if MapCanvasMixin and MapCanvasMixin.AcquirePin then
-        if WorldMapFrame and WorldMapFrame.AcquirePin ~= MapCanvasMixin.AcquirePin then
-            WorldMapFrame.AcquirePin = MapCanvasMixin.AcquirePin
-        end
         return
     end
 
@@ -147,7 +148,7 @@ local function WorkaroundQuestTrackingTaints()
 end
 
 function WorkaroundsModule:LoadWorkarounds(callback)
-    if ConfigModule:Get("enableTaintWorkarounds") then
+    if ConfigModule:Get("enableTaintWorkarounds") and not IsMainlineClient() then
         WorkaroundMapTaints()
         WorkaroundQuestTrackingTaints()
     end

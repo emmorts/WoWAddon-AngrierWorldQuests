@@ -48,6 +48,10 @@ local awqHeaderFontFile
 local awqHeaderFontSize
 local awqHeaderFontFlags
 
+local function IsMainlineClient()
+    return WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+end
+
 local function WrapTextWithColor(color, text)
     if not color or text == nil then
         return text
@@ -1216,8 +1220,10 @@ do
 
         if dp ~= nil then
             dataProvider = dp
-            dataProvider.ShouldShowQuest = ShouldShowQuest
-            dataProvider.ShouldMapShowQuest = ShouldMapShowQuest
+            if not IsMainlineClient() then
+                dataProvider.ShouldShowQuest = ShouldShowQuest
+                dataProvider.ShouldMapShowQuest = ShouldMapShowQuest
+            end
         end
 
         Menu.ModifyMenu("MENU_WORLD_MAP_TRACKING", function(_, rootDescription, _)
