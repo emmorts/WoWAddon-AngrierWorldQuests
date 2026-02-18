@@ -148,7 +148,10 @@ local function WorkaroundQuestTrackingTaints()
 end
 
 function WorkaroundsModule:LoadWorkarounds(callback)
-    if ConfigModule:Get("enableTaintWorkarounds") and not IsMainlineClient() then
+    local taintWorkaroundsEnabled = ConfigModule:Get("enableTaintWorkarounds")
+    AngrierWorldQuests.enableMainlineTaintWorkarounds = taintWorkaroundsEnabled and IsMainlineClient() or false
+
+    if taintWorkaroundsEnabled and not IsMainlineClient() then
         WorkaroundMapTaints()
         WorkaroundQuestTrackingTaints()
     end
